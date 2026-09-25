@@ -1,0 +1,9 @@
+# Copyrighted background music -- do NOT push this to a public GitHub repo.
+# (It's fine for local use / internal Puppy Pages sharing, but public GitHub
+# is indexed and DMCA-scanned; a 10MB Nintendo-sourced mp3 is a real risk.)
+audio/
+
+# Scratch/check files from ad-hoc validation during development
+chk.txt
+check_*.py
+*.tmp
