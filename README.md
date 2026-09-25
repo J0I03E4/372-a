@@ -46,15 +46,59 @@ The top "Window" tabs (1D/3D/7D/30D) still drive the KPI strip and are a
 completely separate, unrelated rolling-window view.
 
 ## Refreshing the data
-1. Refresh `../372a-dashboard/data.json` first (see that folder's README) --
-   this covers the 1/3/7/30-day rolling windows.
+
+### Preferred: `refresh_and_publish.py` (one command, no LLM agent needed)
+```
+python refresh_and_publish.py            # pull BigQuery + rebuild + git commit
+python refresh_and_publish.py --push     # also push, if a git remote is set up
+python refresh_and_publish.py --no-git   # pull + rebuild only, skip git
+```
+This queries BigQuery directly via the `bq` CLI (5 queries: the last 3
+calendar months + rolling 30D/60D windows), using the same corrected
+formulas validated during this project's build-out. It computes every rate
+metric as one direct pooled aggregate across matching work orders
+market-wide, rather than the old two-step "per-tech then weighted-average"
+approach -- simpler, and it no longer depends on `../372a-dashboard/data.json`
+at all.
+
+**This is NOT yet safe as a fully unattended scheduled task.** `bq`/`gcloud`
+are authenticated with a personal OAuth session that periodically expires
+and needs an interactive browser login (`gcloud auth login`) to refresh --
+something a background Windows Scheduled Task can't do on its own. If the
+token's expired, the script fails loudly with a clear error instead of
+silently publishing stale data. For true unattended automation, provision a
+service account with read access to `re-ods-explorer` and point `bq`/`gcloud`
+at its key file instead.
+
+### Fallback: the old manual multi-step process (via `372a-dashboard`)
+Still works if you want per-tech source data updated too (this dashboard's
+previous refresh path):
+1. Refresh `../372a-dashboard/data.json` first (see that folder's README).
 2. Re-pull the last 3 calendar months via BigQuery, grouped by
-   `DATE_TRUNC(call_date, MONTH)` (same store list, same corrected column
-   semantics -- see `add_monthly_periods.py`'s docstring), and re-run
+   `DATE_TRUNC(call_date, MONTH)`, and re-run
    `python add_monthly_periods.py` from `../372a-dashboard` to merge them in.
 3. Run `python build_market_data.py` here to regenerate this folder's
    `data.json` from the tech-level source.
-4. Run `python rebake.py` to re-embed the JSON into `index.html` (works
-   whether or not the file already has data baked in).
+4. Run `python rebake.py` to re-embed the JSON into `index.html`.
+
+## Version control / GitHub
+This folder is its own local git repo (separate from the rest of the
+workspace, so unrelated files -- other CSVs, PPTX decks with real names,
+etc. -- never get dragged in). `audio/` is gitignored -- the background
+music is copyrighted and has no business in a public repo, even though it's
+fine for local use.
+
+No remote is configured yet. To push to GitHub, decide first: personal
+public github.com (do one more pass checking `data.json`/`index.html` for
+anything you don't want public before the first push), or a Walmart
+enterprise GitHub instance if one exists for this kind of internal-tool
+repo. Then:
+```
+git remote add origin <your-repo-url>
+git push -u origin master
+```
+After that, `python refresh_and_publish.py --push` will push automatically
+on every future run.
 
 Built with Code Puppy.
+
