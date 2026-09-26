@@ -1,7 +1,11 @@
 # Copyrighted background music -- do NOT push this to a public GitHub repo.
 # (It's fine for local use / internal Puppy Pages sharing, but public GitHub
 # is indexed and DMCA-scanned; a 10MB Nintendo-sourced mp3 is a real risk.)
-audio/
+# audio/chiptune-loop.wav is the exception -- it's fully synthesized from
+# scratch by generate_chiptune.py (square waves + math, no samples, no
+# licensed material), so it's safe to publish.
+audio/*
+!audio/chiptune-loop.wav
 
 # Local venv used by the hourly refresh scheduled task
 .venv/
