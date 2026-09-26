@@ -317,9 +317,18 @@ function renderTrendChart(){
 }
 
 document.getElementById('soundBtn').onclick = function(){
+  const btn = this;
   const a = document.getElementById('bgAudio');
-  if(a.paused){ a.play().catch(()=>{}); this.textContent='SOUND: ON'; this.classList.add('on'); }
-  else { a.pause(); this.textContent='SOUND: OFF'; this.classList.remove('on'); }
+  if(a.paused){
+    a.play().then(() => {
+      btn.textContent='SOUND: ON'; btn.classList.add('on');
+    }).catch((err) => {
+      console.error('Audio play() failed:', err);
+      btn.textContent='SOUND: ERROR (see console)'; btn.classList.remove('on');
+    });
+  } else {
+    a.pause(); btn.textContent='SOUND: OFF'; btn.classList.remove('on');
+  }
 };
 
 function renderAll(){
