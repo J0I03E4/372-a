@@ -84,9 +84,13 @@ previous refresh path):
 ## Version control / GitHub
 This folder is its own local git repo (separate from the rest of the
 workspace, so unrelated files -- other CSVs, PPTX decks with real names,
-etc. -- never get dragged in). `audio/` is gitignored -- the background
-music is copyrighted and has no business in a public repo, even though it's
-fine for local use.
+etc. -- never get dragged in). Background music is `audio/chiptune-loop.wav`,
+a fully original 8-bit-style loop synthesized from scratch by
+`generate_chiptune.py` (square waves + math, zero samples, zero licensed
+material) -- safe for a public repo. `.gitignore` blocks everything else
+under `audio/` by default (`audio/*` + a `!audio/chiptune-loop.wav`
+exception), in case a copyrighted track ever ends up dropped in that folder
+for local testing again.
 
 **Live at:** `https://github.com/J0I03E4/372-a` (public repo) and served via
 GitHub Pages at `https://j0i03e4.github.io/372-a/` once Pages is enabled in
