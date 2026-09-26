@@ -88,17 +88,47 @@ etc. -- never get dragged in). `audio/` is gitignored -- the background
 music is copyrighted and has no business in a public repo, even though it's
 fine for local use.
 
-No remote is configured yet. To push to GitHub, decide first: personal
-public github.com (do one more pass checking `data.json`/`index.html` for
-anything you don't want public before the first push), or a Walmart
-enterprise GitHub instance if one exists for this kind of internal-tool
-repo. Then:
+**Live at:** `https://github.com/J0I03E4/372-a` (public repo) and served via
+GitHub Pages at `https://j0i03e4.github.io/372-a/` once Pages is enabled in
+repo Settings -> Pages -> Source: `main` branch, `/ (root)`.
+
+ **This repo is PUBLIC.** It contains real Walmart store numbers and
+internal SLA/recall/DTC metrics. That was a deliberate, informed choice --
+if that ever changes, either make the repo private (needs a paid GitHub
+plan for Pages to still work) or pull the site down entirely.
+
+`python refresh_and_publish.py --push` pushes automatically on every run
+since `origin` is already configured.
+
+## Hourly auto-refresh (Windows Scheduled Task)
+A task named **`372A-Hourly-Refresh`** already exists (`run_refresh.bat` ->
+the project's own `.venv` -> `refresh_and_publish.py --push`), but it's
+created **DISABLED** on purpose:
+
+`bq`/`gcloud` currently run under Joseph's personal OAuth session, which
+periodically expires and needs an interactive browser login (`gcloud auth
+login`) -- something a background Scheduled Task cannot do. Running this
+hourly unattended today would work for a while then silently start failing
+every run once the token expires, until someone happens to notice and
+re-logs in.
+
+**Before enabling:** get a service account with read access to
+`re-ods-explorer` (ask in #mint-support or your GCP access channel -- see
+the drafted request below), then:
 ```
-git remote add origin <your-repo-url>
-git push -u origin master
+gcloud auth activate-service-account --key-file=path\to\key.json
+schtasks /change /tn "372A-Hourly-Refresh" /enable
 ```
-After that, `python refresh_and_publish.py --push` will push automatically
-on every future run.
+No code changes needed -- `bq`/`gcloud` will just use whichever credential
+is currently active.
+
+### Drafted ask for #mint-support / GCP access channel
+> Hi team -- requesting a service account with read-only access to
+> `re-ods-explorer.us_re_fm_prod.fsai_workorders` (BigQuery) so I can run an
+> hourly automated data refresh for an internal 372-A facilities dashboard
+> without depending on my personal OAuth session (which expires and needs
+> manual re-login). A key file I can point `gcloud auth
+> activate-service-account` at would be perfect. Thanks!
 
 Built with Code Puppy.
 

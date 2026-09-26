@@ -3,6 +3,9 @@
 # is indexed and DMCA-scanned; a 10MB Nintendo-sourced mp3 is a real risk.)
 audio/
 
+# Local venv used by the hourly refresh scheduled task
+.venv/
+
 # Scratch/check files from ad-hoc validation during development
 chk.txt
 check_*.py
