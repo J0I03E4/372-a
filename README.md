@@ -1,3 +1,4 @@
+
 # 372-A :: Whole Market (Retro Terminal Edition)
 
 Sibling of `../372a-dashboard` (the per-tech Tech Arena), but rolled all the
@@ -105,34 +106,37 @@ plan for Pages to still work) or pull the site down entirely.
 since `origin` is already configured.
 
 ## Hourly auto-refresh (Windows Scheduled Task)
-A task named **`372A-Hourly-Refresh`** already exists (`run_refresh.bat` ->
-the project's own `.venv` -> `refresh_and_publish.py --push`), but it's
-created **DISABLED** on purpose:
+A task named **`372A-Hourly-Refresh`** (`run_refresh.bat` -> the project's
+own `.venv` -> `refresh_and_publish.py --push`) is **ENABLED** and running.
+Joseph already has full read access to `re-ods-explorer` under his own
+identity (confirmed live -- no service account was ever needed for
+*access*), so this works today.
 
-`bq`/`gcloud` currently run under Joseph's personal OAuth session, which
-periodically expires and needs an interactive browser login (`gcloud auth
-login`) -- something a background Scheduled Task cannot do. Running this
-hourly unattended today would work for a while then silently start failing
-every run once the token expires, until someone happens to notice and
-re-logs in.
+**The one real caveat:** `bq`/`gcloud` run under Joseph's personal OAuth
+session, which periodically expires and needs an interactive browser login
+(`gcloud auth login`) to refresh -- something a background Scheduled Task
+can't do by itself. When that happens, the hourly run fails loudly (the
+script refuses to publish stale/broken data) until someone notices and
+re-logs in manually. This could go days between hiccups; treat a stale
+`meta.refresh` date on the live site as the signal to run `gcloud auth
+login` again.
 
-**Before enabling:** get a service account with read access to
-`re-ods-explorer` (ask in #mint-support or your GCP access channel -- see
-the drafted request below), then:
+**To eliminate that caveat entirely**, get a service account with read
+access to `re-ods-explorer` (ask in #mint-support or your GCP access
+channel), then:
 ```
 gcloud auth activate-service-account --key-file=path\to\key.json
-schtasks /change /tn "372A-Hourly-Refresh" /enable
 ```
 No code changes needed -- `bq`/`gcloud` will just use whichever credential
-is currently active.
+is currently active, service account or personal.
 
 ### Drafted ask for #mint-support / GCP access channel
-> Hi team -- requesting a service account with read-only access to
-> `re-ods-explorer.us_re_fm_prod.fsai_workorders` (BigQuery) so I can run an
-> hourly automated data refresh for an internal 372-A facilities dashboard
-> without depending on my personal OAuth session (which expires and needs
-> manual re-login). A key file I can point `gcloud auth
-> activate-service-account` at would be perfect. Thanks!
+> Hi team -- I already have personal read access to
+> `re-ods-explorer.us_re_fm_prod.fsai_workorders`, but I'd like a service
+> account with the same read-only access so an hourly automated dashboard
+> refresh doesn't depend on my personal OAuth session (which periodically
+> expires and needs an interactive browser re-login that a background task
+> can't do). A key file I can point `gcloud auth activate-service-account`
+> at would be perfect. Thanks!
 
 Built with Code Puppy.
-
