@@ -11,8 +11,11 @@ name: Daily BigQuery Refresh
 # 07:00 UTC = 12:00 AM Arizona time (no DST, always UTC-7).
 
 on:
-  schedule:
-    - cron: '0 7 * * *'
+  # Schedule trigger disabled until the GCP_SA_KEY secret exists (see below)
+  # -- otherwise this fails every single night and spams notifications.
+  # Uncomment once the secret is added:
+  # schedule:
+  #   - cron: '0 7 * * *'
   workflow_dispatch: {}   # lets you trigger a manual run from the Actions tab
 
 permissions:
