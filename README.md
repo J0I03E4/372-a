@@ -105,21 +105,22 @@ plan for Pages to still work) or pull the site down entirely.
 `python refresh_and_publish.py --push` pushes automatically on every run
 since `origin` is already configured.
 
-## Hourly auto-refresh (Windows Scheduled Task)
-A task named **`372A-Hourly-Refresh`** (`run_refresh.bat` -> the project's
-own `.venv` -> `refresh_and_publish.py --push`) is **ENABLED** and running.
-Joseph already has full read access to `re-ods-explorer` under his own
-identity (confirmed live -- no service account was ever needed for
-*access*), so this works today.
+## Daily auto-refresh (Windows Scheduled Task)
+A task named **`372A-Daily-Refresh`** (`run_refresh.bat` -> the project's
+own `.venv` -> `refresh_and_publish.py --push`) is **ENABLED**, running
+once a day at **12:00 AM**. Joseph already has full read access to
+`re-ods-explorer` under his own identity (confirmed live -- no service
+account was ever needed for *access*), so this works today.
 
 **The one real caveat:** `bq`/`gcloud` run under Joseph's personal OAuth
 session, which periodically expires and needs an interactive browser login
 (`gcloud auth login`) to refresh -- something a background Scheduled Task
-can't do by itself. When that happens, the hourly run fails loudly (the
+can't do by itself. When that happens, the daily run fails loudly (the
 script refuses to publish stale/broken data) until someone notices and
-re-logs in manually. This could go days between hiccups; treat a stale
-`meta.refresh` date on the live site as the signal to run `gcloud auth
-login` again.
+re-logs in manually. Treat a stale `meta.refresh` date on the live site as
+the signal to run `gcloud auth login` again. Note the task's Logon Mode is
+"Interactive only", so it also won't fire at all if the machine is fully
+logged off at midnight -- it'll just pick up on the next successful run.
 
 **To eliminate that caveat entirely**, get a service account with read
 access to `re-ods-explorer` (ask in #mint-support or your GCP access
