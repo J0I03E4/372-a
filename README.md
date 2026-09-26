@@ -140,4 +140,26 @@ is currently active, service account or personal.
 > can't do). A key file I can point `gcloud auth activate-service-account`
 > at would be perfect. Thanks!
 
+## Cloud auto-refresh, independent of Joseph's computer (GitHub Actions)
+The local Scheduled Task above only runs while Joseph's machine is powered
+on (Windows can't wake from a full shutdown to run a task -- that needs
+Wake-on-LAN hardware, not practical here). To update the dashboard even
+when the computer is off, `.github/workflows/daily-refresh.yml` runs the
+same `refresh_and_publish.py` on GitHub's own cloud runners instead, once a
+day at 12:00 AM Arizona time.
+
+**This is currently dormant** -- it needs the same service account
+described above, added as a repo secret:
+1. Get the service account key file (the #mint-support ask above).
+2. GitHub repo -> Settings -> Secrets and variables -> Actions -> New
+   repository secret -> name it `GCP_SA_KEY`, paste the full JSON key
+   contents as the value.
+3. That's it -- the workflow already exists and will start running on its
+   next scheduled tick (or trigger it manually anytime via the Actions tab
+   -> Daily BigQuery Refresh -> Run workflow).
+
+Once this is live, it makes the local `372A-Daily-Refresh` Scheduled Task
+redundant for keeping the site itself updated (though still handy to run
+locally if you want a refresh right now, on demand).
+
 Built with Code Puppy.
