@@ -14,3 +14,8 @@ audio/*
 chk.txt
 check_*.py
 *.tmp
+
+# Refresh run logs (from run_refresh.bat / Scheduled Task) -- local
+# debugging noise only, never useful in a public repo's history.
+*.log
+*.log.err
