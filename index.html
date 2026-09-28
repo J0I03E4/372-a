@@ -167,7 +167,7 @@ function renderMetricTabs(){
     `<button class="retro-btn ${m===curMetric?'on':''}" data-m="${m}">${METRICS[m].label}</button>`
   ).join('');
   document.querySelectorAll('#metricTabs button').forEach(b=>b.onclick=()=>{
-    curMetric = b.dataset.m; renderWindowChart(); renderTrendChart(); renderChartTitles();
+    curMetric = b.dataset.m; renderMetricTabs(); renderWindowChart(); renderTrendChart(); renderChartTitles();
   });
 }
 
