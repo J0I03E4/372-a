@@ -11,26 +11,49 @@ volume-weighted rates.
   via `build_market_data.py`, then baked into `index.html` via
   `embed_data.py` -- same two-step pattern as the tech-level dashboard.
 
-## How the rollup works (`build_market_data.py`)
+## How the rollup works (`refresh_and_publish.py`)
 - **Counts** (WOs, high-priority WOs, SLA under/over/missing, recalls,
-  stores) are summed straight across every tech.
-- **Rates** (DTC, RESPONSE%, SELF PERF%, FTF%) are **volume-weighted**, not
-  simple averages -- a tech with 130 WOs pulls the market number toward
-  their rate much harder than a tech with 6 WOs. DTC's high-priority variant
-  is weighted by high-priority WO count specifically.
+  stores) are summed straight across every work order market-wide.
+- **Rates** (DTC, DTC_HP, RESPONSE, SELF PERF, FTF) are computed as a
+  **wos_1p-weighted average of per-technician rows** -- each tech's rate is
+  pulled from a separate GROUP-BY-tech query, then combined weighted by
+  that tech's self-performed (`wos_1p`) work-order count. A tech with
+  `wos_1p = 0` is excluded from the weighting entirely. DTC_HP uses its own
+  `hp_wos`-weighted average over techs with a non-null `dtc_hp`.
+- This deliberately matches the methodology used by the sibling **"10B
+  Region Arena"** dashboard (the wider region 372-A sits inside), so the
+  two are directly comparable -- including one intentional quirk carried
+  over from that dashboard's client-side JS: a tech with `wos_1p > 0` but
+  zero COMPLETED work orders (so `dtc` is `NULL`) contributes a `0`-day DTC
+  to the weighted sum rather than being excluded (their JS relies on
+  `null * wos_1p` coercing to `0`). We replicate that on purpose for
+  numerical parity, even though excluding it would arguably be more
+  correct.
+- **Even with matching math, 372-A won't fully match 10B Region Arena's
+  numbers**, because 10B tracks Food Equipment (FE) technicians
+  individually and 372-A structurally cannot (see caveat below) -- 10B's
+  team rollup includes FE work orders that 372-A's never will.
 - The 30-day **daily trend** merges every tech's daily rows by calendar
   date into one market-wide line (WOS summed, rates volume-weighted per day).
 
-## Known data caveats (same as the tech dashboard, plus one more)
+## Known data caveats (same as the tech dashboard, plus two more)
 - DTC on the 1-day/3-day windows is structurally biased low -- trust the
   30-day window for DTC.
 - FOOD Equipment techs aren't trackable at the individual level for 372-A
-  stores, so they're not part of this rollup either.
+  stores, so they're not part of this rollup either -- unlike the sibling
+  10B Region Arena dashboard, which does track FE techs. This is the
+  biggest single reason the two dashboards won't match even with identical
+  math.
 - High-priority DTC uses P1/P2 priority tiers, not the native
   emergency-only flag.
 - `stores_sum` in the window-comparison table is a naive sum of each tech's
   store count -- if two techs share a store, that store gets counted twice.
   Treat it as "store-visits capacity", not a unique-store count.
+- The wos_1p-weighted rate formulas intentionally replicate a quirk from
+  10B Region Arena's client-side JS: a tech with self-performed work orders
+  but zero completed ones (`dtc` is `NULL`) contributes a `0`-day DTC to the
+  weighted average rather than being dropped. See `weighted_team_rates()`
+  in `refresh_and_publish.py` for the exact logic.
 
 ## Monthly comparison: real calendar months, labeled
 The "Monthly Comparison" table and the "Metric By Month" chart use **actual
@@ -54,13 +77,13 @@ python refresh_and_publish.py            # pull BigQuery + rebuild + git commit
 python refresh_and_publish.py --push     # also push, if a git remote is set up
 python refresh_and_publish.py --no-git   # pull + rebuild only, skip git
 ```
-This queries BigQuery directly via the `bq` CLI (5 queries: the last 3
-calendar months + rolling 30D/60D windows), using the same corrected
-formulas validated during this project's build-out. It computes every rate
-metric as one direct pooled aggregate across matching work orders
-market-wide, rather than the old two-step "per-tech then weighted-average"
-approach -- simpler, and it no longer depends on `../372a-dashboard/data.json`
-at all.
+This queries BigQuery directly via the `bq` CLI (10 queries: a market-wide
+query plus a per-technician breakdown query, for each of the last 3
+calendar months + rolling 30D/60D windows). Counts come straight from the
+market-wide query; rates are computed from the per-tech breakdown via a
+wos_1p-weighted average (see "How the rollup works" above) -- matching the
+sibling 10B Region Arena dashboard's methodology. It no longer depends on
+`../372a-dashboard/data.json` at all.
 
 **This is NOT yet safe as a fully unattended scheduled task.** `bq`/`gcloud`
 are authenticated with a personal OAuth session that periodically expires

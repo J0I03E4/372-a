@@ -5,11 +5,13 @@ BigQuery via the `bq` CLI, using the corrected query logic validated during
 this project's original build-out (see README.md for the full audit trail
 of why each formula looks the way it does).
 
-Unlike the original build process, this computes every rate metric
-(DTC, RESPONSE, SELF PERF, FTF) as a single direct pooled aggregate across
-all matching work orders market-wide, rather than a weighted average of
-per-tech numbers -- simpler, less error-prone, and mathematically at least
-as correct.
+Rate metrics (DTC, DTC_HP, RESPONSE, SELF PERF, FTF) are computed as a
+wos_1p-weighted average of per-technician rows -- matching the methodology
+used by the sibling '10B Region Arena' dashboard (a wider region that
+contains 372-A), so the two are apples-to-apples comparable. This replaced
+an earlier version of this script that used one direct pooled aggregate
+across all matching work orders market-wide -- see git history for that
+approach if it's ever needed again.
 
 USAGE:
     python refresh_and_publish.py            # pull + rebuild + git commit
@@ -69,6 +71,58 @@ INT_FIELDS = ('wos', 'wos_1p', 'wos_3p', 'hp_wos', 'sla_under', 'sla_over',
               'sla_missing', 'recalls', 'stores_sum', 'n_techs')
 FLOAT_FIELDS = ('dtc', 'dtc_hp', 'response', 'self_perf', 'ftf')
 
+# Per-technician breakdown, used only to compute the wos_1p-weighted team
+# rates below (matches the '10B Region Arena' dashboard's methodology).
+PER_TECH_QUERY_TEMPLATE = """
+SELECT
+  trade_aligned_tech_name AS tech,
+  COUNTIF(COALESCE(third_party_assigned,'') = 'No') AS wos_1p,
+  COUNTIF(STARTS_WITH(COALESCE(priority_name,''),'P1-') OR STARTS_WITH(COALESCE(priority_name,''),'P2-')) AS hp_wos,
+  ROUND(AVG(CASE WHEN status_name='COMPLETED' THEN DATETIME_DIFF(completion_date, call_date, MINUTE)/1440.0 END), 2) AS dtc,
+  ROUND(AVG(CASE WHEN status_name='COMPLETED' AND (STARTS_WITH(COALESCE(priority_name,''),'P1-') OR STARTS_WITH(COALESCE(priority_name,''),'P2-')) THEN DATETIME_DIFF(completion_date, call_date, MINUTE)/1440.0 END), 2) AS dtc_hp,
+  ROUND(100 * SAFE_DIVIDE(COUNTIF(sla_response_compliance_reassigned='Under SLA Response'), COUNT(*)), 2) AS response,
+  ROUND(100 * SAFE_DIVIDE(COUNTIF(COALESCE(third_party_assigned,'')='No'), COUNT(*)), 2) AS self_perf,
+  ROUND(100 * SAFE_DIVIDE(COUNTIF(first_time_fix_compliance='Yes First Time Fix'), COUNT(*)), 2) AS ftf
+FROM {table}
+WHERE SAFE_CAST(store_nbr AS INT64) IN ({stores})
+  AND trade_group IN ('GM','HVAC/R')
+  AND trade_aligned_tech_name IS NOT NULL AND trade_aligned_tech_name != ''
+  AND call_date >= DATETIME('{start}')
+  AND call_date < DATETIME('{end}')
+GROUP BY trade_aligned_tech_name
+"""
+
+
+def weighted_team_rates(tech_rows):
+    """Reproduce the 10B Region Arena dashboard's client-side JS math
+    exactly (weighted average of pre-aggregated per-tech rows, weighted by
+    wos_1p), so 372-A's numbers are directly comparable to that region-wide
+    dashboard. NOTE -- this deliberately replicates a quirk in their JS:
+    `t.dtc * t.wos_1p` relies on JS coercing a null dtc to 0, so a tech with
+    wos_1p > 0 but zero COMPLETED work orders (dtc is NULL) silently
+    contributes a 0-day DTC to the weighted sum instead of being excluded.
+    We match that behavior here on purpose for parity -- see README.
+    """
+    t1 = [t for t in tech_rows if (t.get('wos_1p') or 0) > 0]
+    total_1p = sum(t['wos_1p'] for t in t1)
+
+    def wavg(key):
+        if total_1p == 0:
+            return None
+        return round(sum((t.get(key) or 0) * t['wos_1p'] for t in t1) / total_1p, 2)
+
+    hp_rows = [t for t in tech_rows if t.get('dtc_hp') is not None and (t.get('hp_wos') or 0) > 0]
+    total_hp = sum(t['hp_wos'] for t in hp_rows)
+    dtc_hp = round(sum(t['dtc_hp'] * t['hp_wos'] for t in hp_rows) / total_hp, 2) if total_hp else None
+
+    return {
+        'dtc': wavg('dtc'),
+        'response': wavg('response'),
+        'self_perf': wavg('self_perf'),
+        'ftf': wavg('ftf'),
+        'dtc_hp': dtc_hp,
+    }
+
 
 def run_bq(sql):
     # SQL is piped via stdin (not passed as a command-line arg) and shell=True
@@ -93,6 +147,28 @@ def run_bq(sql):
     for k in FLOAT_FIELDS:
         row[k] = float(row[k]) if row.get(k) is not None else None
     return row
+
+
+def run_bq_multi(sql):
+    """Like run_bq, but returns every row (used for the per-tech breakdown
+    query, which is GROUP BY'd and returns one row per technician)."""
+    proc = subprocess.run(
+        [BQ_CMD, "query", "--use_legacy_sql=false", "--format=json"],
+        input=sql, capture_output=True, text=True, timeout=180, shell=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            "bq query failed -- if this mentions 'Reauthentication failed' "
+            "or 'cannot prompt during non-interactive execution', run "
+            "`gcloud auth login` interactively first.\n\n" + proc.stderr
+        )
+    rows = json.loads(proc.stdout)
+    for row in rows:
+        row['wos_1p'] = int(row['wos_1p']) if row.get('wos_1p') is not None else 0
+        row['hp_wos'] = int(row['hp_wos']) if row.get('hp_wos') is not None else 0
+        for k in ('dtc', 'dtc_hp', 'response', 'self_perf', 'ftf'):
+            row[k] = float(row[k]) if row.get(k) is not None else None
+    return rows
 
 
 def month_bounds(year, month):
@@ -138,6 +214,9 @@ def main():
         print(f"Querying {label} ({start} to {end})...")
         periods[key] = run_bq(QUERY_TEMPLATE.format(
             table=WO_TABLE, stores=STORE_LIST, start=start.isoformat(), end=end.isoformat()))
+        tech_rows = run_bq_multi(PER_TECH_QUERY_TEMPLATE.format(
+            table=WO_TABLE, stores=STORE_LIST, start=start.isoformat(), end=end.isoformat()))
+        periods[key].update(weighted_team_rates(tech_rows))
         period_labels[key] = label
 
     for n in (30, 60):  # rolling windows needed by the 30D-trend calc in index.html
@@ -145,6 +224,9 @@ def main():
         print(f"Querying rolling {n}D window ({start} to {end})...")
         periods[str(n)] = run_bq(QUERY_TEMPLATE.format(
             table=WO_TABLE, stores=STORE_LIST, start=start.isoformat(), end=end.isoformat()))
+        tech_rows = run_bq_multi(PER_TECH_QUERY_TEMPLATE.format(
+            table=WO_TABLE, stores=STORE_LIST, start=start.isoformat(), end=end.isoformat()))
+        periods[str(n)].update(weighted_team_rates(tech_rows))
 
     latest_key = list(period_labels.keys())[-1]
     out = {
@@ -153,17 +235,21 @@ def main():
         'meta': {
             'region': '372-A',
             'refresh': today.strftime('%B %d, %Y'),
-            'source': 're-ods-explorer.us_re_fm_prod.fsai_workorders (live BigQuery pull, automated via refresh_and_publish.py)',
+            'source': 're-ods-explorer.us_re_fm_prod.fsai_workorders (live BigQuery pull, automated via refresh_and_publish.py; rates are wos_1p-weighted per-tech averages, matching 10B Region Arena methodology)',
             'n_techs': periods[latest_key]['n_techs'],
             'period_labels': period_labels,
             'notes': [
-                'Rate metrics (DTC, RESPONSE, SELF PERF, FTF) are computed as a single '
-                'direct pooled aggregate across all matching work orders market-wide -- '
-                'not a weighted average of per-tech numbers.',
+                'Rate metrics (DTC, DTC_HP, RESPONSE, SELF PERF, FTF) are computed as a '
+                'wos_1p-weighted average of per-technician rows -- matching the '
+                'methodology used by the sibling "10B Region Arena" dashboard (the wider '
+                'region 372-A sits inside), so the two are directly comparable. A tech '
+                'with wos_1p=0 is excluded entirely from the weighting.',
                 'FOOD Equipment technicians are not trackable at the individual-tech level '
                 'for 372-A stores (trade_aligned_tech_name is NULL on 100% of FOOD work '
                 'orders here) -- Food Equipment KPIs are omitted rather than guessed. See '
-                'the sibling 372a-tableau project for the one place FOOD data exists.',
+                'the sibling 372a-tableau project for the one place FOOD data exists. This '
+                'means 372-A numbers still will not fully match 10B Region Arena even with '
+                'matching math, since that region-wide dashboard does track FE techs.',
                 "High-priority (HP) DTC uses P1/P2 priority tiers, not the table's native "
                 'emergency-only high_priority flag -- interpret with caution on small samples.',
                 'This is a whole-market rollup: all technicians in 372-A are combined into '
